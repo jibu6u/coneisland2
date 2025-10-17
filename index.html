@@ -12,7 +12,7 @@
   input[type=file]{width:100%}
   button{margin-top:8px; padding:8px 10px; border-radius:8px; border:none; cursor:pointer; font-weight:600}
   button.primary{background:linear-gradient(180deg,var(--accent),#0d8fb8); color:#05202b}
-  button.ghost{background:#111827; color:#e6eef6; border:1px solid #24323f}
+  button.ghost{background:#111827; color:#e6eef6; border:1px solid #24323f'}
   .row{display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap}
   .small{font-size:12px; color:var(--muted)}
   #canvasContainer{width:100%; height:100vh; overflow:hidden}
@@ -20,7 +20,7 @@
   .sliderRow{display:flex; gap:8px; align-items:center}
   #piecesList{margin-top:8px; display:flex; flex-direction:column; gap:8px; max-height:260px; overflow:auto; padding:6px; border-radius:6px; background:#081018; border:1px solid #16202a}
   .pieceRow{display:flex; gap:8px; align-items:center; padding:6px; border-radius:8px; border:1px solid #20303f; background:#0a131c}
-  .thumbSmall{width:56px; height:56px; object-fit:cover; background:#000; border-radius:6px; border:1px solid #20303f}
+  .thumbSmall{width:56px; height:56px; object-fit:cover; background:#000; border-radius:6px; border:1px solid #20303f'}
   .pieceMeta{flex:1; font-size:12px; color:var(--muted)}
   .pieceBtns{display:flex; gap:6px; align-items:center}
   .orderBadge{min-width:22px; text-align:center; font-weight:700; color:#05202b; background:linear-gradient(180deg,var(--accent),#0d8fb8); border-radius:6px; padding:2px 6px}
@@ -111,12 +111,10 @@ function initThree(){
   renderer = new THREE.WebGLRenderer({ antialias:true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
-  // outputColorSpace exists in r160
   try{ renderer.outputColorSpace = THREE.SRGBColorSpace; }catch(e){}
   renderer.xr.enabled = true;
   container.appendChild(renderer.domElement);
 
-  // Try to create the VRButton. If it throws, log and continue.
   try {
     const btn = VRButton.createButton(renderer);
     btn.classList.add('webxr-button');
@@ -149,7 +147,7 @@ async function checkWebXRAvailability(){
       if(!supported) console.info('immersive-vr not supported by this device/browser.');
     }catch(e){
       enterVrBtn.disabled = true;
-      console.warn('XR availability check failed', e);
+      console.warn('XR check failed', e);
     }
   } else {
     enterVrBtn.disabled = true;
@@ -542,42 +540,60 @@ function hookUI(){
   document.getElementById('btnPlayAlternate').addEventListener('click', ()=> startAlternate());
   document.getElementById('btnStop').addEventListener('click', ()=> { animRunning=false; });
 
+  // Enter VR 버튼: 세션 시작/종료를 명확히 처리하도록 구현
   document.getElementById('enterVrBtn').addEventListener('click', async ()=>{
-    // If already presenting, end session
-    if(renderer.xr.isPresenting){
-      try{ await xrSession?.end(); }catch(e){ console.warn('session end failed', e); }
-      return;
-    }
+    try {
+      if(renderer.xr.isPresenting){
+        // 이미 프레젠팅 중이면 세션 종료
+        console.info('Ending XR session...');
+        try{ await xrSession?.end(); }catch(e){ console.warn('Error ending session', e); }
+        return;
+      }
 
-    if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
-      alert('WebXR은 보안 컨텍스트(HTTPS)에서만 동작합니다. 서버로 띄우거나 localhost로 테스트하세요.');
-      return;
-    }
+      if(location.protocol !== 'https:' && location.hostname !== 'localhost'){
+        alert('WebXR은 보안 컨텍스트(HTTPS)에서만 동작합니다. GitHub Pages 또는 localhost에서 테스트하세요.');
+        return;
+      }
 
-    if(!navigator.xr || !navigator.xr.requestSession){ alert('WebXR 미지원 (navigator.xr.requestSession 없음)'); return; }
-    try{
+      if(!navigator.xr || !navigator.xr.requestSession){ alert('WebXR 미지원 (navigator.xr.requestSession 없음)'); return; }
+
       const supported = await navigator.xr.isSessionSupported('immersive-vr');
       if(!supported){ alert('immersive-vr 미지원'); console.info('isSessionSupported returned false'); return; }
 
-      // dom-overlay는 일부 환경에서 session 요청을 거부하므로 기본적으로 제거.
-      // 필요하면 별도 브라우저별 처리를 추가하세요.
-      const session = await navigator.xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor', 'bounded-floor']
-      });
+      // three.js에 로컬-플로어 참조공간 타입을 지정해 둡니다(가능한 경우).
+      try { renderer.xr.setReferenceSpaceType('local-floor'); } catch (e) { /* 일부 r다른버전엔 없을 수 있음 */ }
 
+      // dom-overlay 옵션은 일부 환경에서 거부당할 수 있으므로 제거. 필요하면 별도 처리.
+      const optionalFeatures = ['local-floor', 'bounded-floor', 'hand-tracking'];
+
+      console.info('Requesting XR session...');
+      const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures });
       xrSession = session;
+
+      // 연결
       renderer.xr.setSession(session);
-      enterVrBtn.textContent='Exit VR';
-      console.info('XR session started:', session);
+      enterVrBtn.textContent = 'Exit VR';
+      enterVrBtn.disabled = false;
+      console.info('XR session started', session);
 
       session.addEventListener('end', ()=>{
-        enterVrBtn.textContent='Enter VR'; xrSession=null;
+        enterVrBtn.textContent = 'Enter VR';
+        xrSession = null;
         console.info('XR session ended');
       });
 
-    }catch(err){
-      console.error('requestSession failed', err);
-      alert('VR 시작 실패 — 콘솔 확인');
+    } catch (err) {
+      console.error('Failed to start XR session:', err);
+      // 만약 three.js VRButton이 DOM에 있다면 그것의 버튼을 클릭해보는 시도(대체 경로)
+      try {
+        const vrBtn = document.querySelector('.webxr-button button, .webxr-button a, .webxr-button');
+        if(vrBtn){
+          console.info('Attempting to trigger built-in VRButton as fallback.');
+          vrBtn.click();
+          return;
+        }
+      } catch(e){}
+      alert('VR 시작 실패 — 콘솔을 확인하세요.');
     }
   });
 }
